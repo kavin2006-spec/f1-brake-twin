@@ -1,0 +1,6 @@
+fastf1>=3.5.0
+jupyter
+ipykernel
+matplotlib
+pandas
+numpy
