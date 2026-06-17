@@ -16,5 +16,9 @@ data/processed/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 
+# Precomputed pickles ARE tracked (small, needed for cloud deploy)
+!data/precomputed/
+!data/precomputed/*.pkl
+
 # Streamlit
 .streamlit/secrets.toml
