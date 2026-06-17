@@ -45,3 +45,9 @@ EPSILON_DISC = 0.85         # —, emissivity (oxidized carbon at high T)
 H_EFF_0 = 72.0              # W/K, lumped (h × A_cool) at reference velocity
 V_REF = 80.0                # m/s, reference velocity (~290 km/h)
 N_VEL = 0.7                 # —, velocity exponent for convective scaling
+
+# ── Wear model (L confidence — calibration targets) ────────────────
+K_MECH = 1.0e-11            # kg/J, mechanical wear coefficient
+K_OX_0 = 5.0e-4             # kg/s, oxidative pre-exponential factor
+E_A = 150_000.0             # J/mol, activation energy for carbon oxidation
+R_GAS = 8.314               # J/(mol·K), universal gas constant
