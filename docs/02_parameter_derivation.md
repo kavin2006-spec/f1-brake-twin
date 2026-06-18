@@ -188,6 +188,33 @@ $$
 
 **Why two mechanisms matter:** mechanical wear concentrates during braking events; oxidative wear accumulates whenever the disc is hot, which at Monaco means _most of the lap_. The split between mechanisms tells us whether brake life is limited by usage intensity or by sustained operating temperature — different engineering implications.
 
+### 5.6 Race-specific parameters (Phase 1b chunk 1)
+
+For race-condition extension. These supersede the Phase 1a constant-mass assumption when running race sessions; qualifying analysis continues to use the single-mass model.
+
+| Symbol            | Parameter                            | Value | Confidence | Source / note                                                                                                                                      |
+| ----------------- | ------------------------------------ | ----- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FUEL_KG_PER_LAP` | Per-lap fuel consumption (heuristic) | 0.9   | M          | kg/lap. 2026 regs limit max race fuel; 0.9 chosen as round-number consensus; varies ±20% by circuit                                                |
+| `FUEL_MAX_KG`     | Maximum race-start fuel              | 70.0  | H          | kg. 2026 FIA regulation cap                                                                                                                        |
+| `FUEL_END_KG`     | Required race-end fuel               | 3.0   | M          | kg. Scrutineering sample minimum; 3 kg conservative                                                                                                |
+| `T_RACE_START_C`  | Disc temperature at start of lap 2   | 350.0 | L          | °C. Warmed by formation lap, slightly cooled on grid. Initial condition uncertainty washes out within ~3 racing laps due to thermal time constant. |
+
+**Race-start fuel mass heuristic.** For a race of $N_{laps}$ laps:
+
+$$
+m_{fuel,start} = \min(\text{FUEL\_KG\_PER\_LAP} \cdot N_{laps},\; \text{FUEL\_MAX\_KG})
+$$
+
+The min protects against absurdly long races (none in 2026, but defensive). The cap reflects the regulatory limit.
+
+**Linear burn-down.** Fuel mass at the start of racing lap $k$ (where $k=2$ is the first analyzed lap):
+
+$$
+m_{fuel}(k) = m_{fuel,start} - \frac{m_{fuel,start} - m_{fuel,end}}{N_{race} - 1} \cdot (k - 1)
+$$
+
+Real fuel consumption varies lap-to-lap (fuel saving, traffic, pace management), but in aggregate the linear model captures the dominant effect — total car mass declining by 60-80 kg across a race.
+
 ## 6. Engine braking model
 
 When the driver is off-throttle but not braking (coast-down phase), the car still decelerates due to drag, rolling resistance, **and** engine braking from the ICE. Phase 1a uses a simple constant-deceleration model:

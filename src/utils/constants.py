@@ -51,3 +51,9 @@ K_MECH = 1.0e-11            # kg/J, mechanical wear coefficient
 K_OX_0 = 5.0e-4             # kg/s, oxidative pre-exponential factor
 E_A = 150_000.0             # J/mol, activation energy for carbon oxidation
 R_GAS = 8.314               # J/(mol·K), universal gas constant
+
+# ── Race-condition parameters (Phase 1b chunk 1) ───────────────────
+FUEL_KG_PER_LAP = 0.9       # kg/lap, average race fuel consumption
+FUEL_MAX_KG = 70.0          # kg, 2026 regulatory cap
+FUEL_END_KG = 3.0           # kg, minimum race-end fuel
+T_RACE_START_C = 350.0      # °C, disc temp at start of lap 2 (first racing lap)
