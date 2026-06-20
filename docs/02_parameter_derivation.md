@@ -215,6 +215,21 @@ $$
 
 Real fuel consumption varies lap-to-lap (fuel saving, traffic, pace management), but in aggregate the linear model captures the dominant effect — total car mass declining by 60-80 kg across a race.
 
+### 5.7 Rear-axle parameters (Phase 1b chunk 2)
+
+For rear brake modeling with MGU-K regen split. These parameters specify the rear-axle geometry (different from front), cooling (separate calibration), and the MGU-K constraints used by the regen strategy model.
+
+| Symbol               | Parameter                            | Value     | Confidence | Source / note                                                                                                                                 |
+| -------------------- | ------------------------------------ | --------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BETA_REAR`          | Brake bias to rear axle              | 0.44      | M          | Complement of front bias (1 - 0.56), per Phase 1a scope decision                                                                              |
+| `D_DISC_OUTER_REAR`  | Rear disc outer diameter             | 0.270     | H          | m. Brembo published range 260-280 mm for 2026 rear; 270 chosen as midpoint                                                                    |
+| `D_DISC_INNER_REAR`  | Rear disc inner diameter             | 0.150     | M          | m. Engineering estimate scaled from front 180 mm by outer-diameter ratio                                                                      |
+| `T_DISC_REAR`        | Rear disc thickness                  | 0.032     | H          | m. Same regulatory cap (34 mm max) as front; teams typically run 32 mm                                                                        |
+| `M_DISC_REAR`        | Rear disc mass                       | 1.4       | M          | kg. Geometric scaling from front 2.0 kg (rear is smaller diameter, same density and thickness)                                                |
+| `H_EFF_0_REAR`       | Lumped convective conductance (rear) | 60.0      | M          | W/K at reference velocity. Lower than front (72 W/K) reflecting smaller surface area. Primary sensitivity-analysis target — no public source. |
+| `MGUK_POWER_LIMIT`   | MGU-K peak harvest power             | 350_000   | H          | W. 2026 FIA regulation.                                                                                                                       |
+| `MGUK_HARVEST_CAP_J` | MGU-K harvest cap per lap            | 7_000_000 | H          | J. 2026 FIA regulation (post-2025 revision). Not binding in chunk 2 per diagnostic check.                                                     |
+
 ## 6. Engine braking model
 
 When the driver is off-throttle but not braking (coast-down phase), the car still decelerates due to drag, rolling resistance, **and** engine braking from the ICE. Phase 1a uses a simple constant-deceleration model:
@@ -254,30 +269,38 @@ And the friction-disc energy is the same since $f_{friction,front} = 1$.
 
 For quick reference and direct import into code:
 
-| Symbol          | Name                           | Value     | Units     |
-| --------------- | ------------------------------ | --------- | --------- |
-| $m_{car}$       | Vehicle mass (Q3)              | 850       | kg        |
-| $A_f$           | Frontal area                   | 1.40      | m²        |
-| $C_d$           | Drag coefficient (Z-mode)      | 0.95      | —         |
-| $C_{rr}$        | Rolling resistance coefficient | 0.020     | —         |
-| $g$             | Gravitational acceleration     | 9.81      | m/s²      |
-| $a_{eng}$       | Engine braking deceleration    | 0.30      | m/s²      |
-| $\beta_{front}$ | Brake bias front               | 0.56      | —         |
-| $D_{disc}$      | Front disc outer diameter      | 0.330     | m         |
-| $D_{inner}$     | Front disc inner diameter      | 0.180     | m         |
-| $t_{disc}$      | Disc thickness                 | 0.032     | m         |
-| $m_{disc}$      | Disc mass                      | 2.0       | kg        |
-| $\rho_{cc}$     | C/C density                    | 1800      | kg/m³     |
-| $c_p$           | C/C specific heat (~600°C)     | 1300      | J/(kg·K)  |
-| $\varepsilon$   | Emissivity                     | 0.85      | —         |
-| $h_{eff,0}$     | Lumped convective conductance  | 72        | W/K       |
-| $v_0$           | Reference velocity             | 80        | m/s       |
-| $n$             | Velocity exponent              | 0.7       | —         |
-| $\sigma$        | Stefan-Boltzmann constant      | 5.67×10⁻⁸ | W/(m²·K⁴) |
-| $k_{mech}$      | Mechanical wear coefficient    | 1.0×10⁻¹¹ | kg/J      |
-| $k_{ox,0}$      | Oxidative pre-exponential      | 5.0×10⁻⁴  | kg/s      |
-| $E_a$           | Activation energy              | 150_000   | J/mol     |
-| $R_{gas}$       | Universal gas constant         | 8.314     | J/(mol·K) |
+| Symbol               | Name                               | Value     | Units     |
+| -------------------- | ---------------------------------- | --------- | --------- |
+| $m_{car}$            | Vehicle mass (Q3)                  | 850       | kg        |
+| $A_f$                | Frontal area                       | 1.40      | m²        |
+| $C_d$                | Drag coefficient (Z-mode)          | 0.95      | —         |
+| $C_{rr}$             | Rolling resistance coefficient     | 0.020     | —         |
+| $g$                  | Gravitational acceleration         | 9.81      | m/s²      |
+| $a_{eng}$            | Engine braking deceleration        | 0.30      | m/s²      |
+| $\beta_{front}$      | Brake bias front                   | 0.56      | —         |
+| $D_{disc}$           | Front disc outer diameter          | 0.330     | m         |
+| $D_{inner}$          | Front disc inner diameter          | 0.180     | m         |
+| $t_{disc}$           | Disc thickness                     | 0.032     | m         |
+| $m_{disc}$           | Disc mass                          | 2.0       | kg        |
+| $\rho_{cc}$          | C/C density                        | 1800      | kg/m³     |
+| $c_p$                | C/C specific heat (~600°C)         | 1300      | J/(kg·K)  |
+| $\varepsilon$        | Emissivity                         | 0.85      | —         |
+| $h_{eff,0}$          | Lumped convective conductance      | 72        | W/K       |
+| $v_0$                | Reference velocity                 | 80        | m/s       |
+| $n$                  | Velocity exponent                  | 0.7       | —         |
+| $\sigma$             | Stefan-Boltzmann constant          | 5.67×10⁻⁸ | W/(m²·K⁴) |
+| $k_{mech}$           | Mechanical wear coefficient        | 1.0×10⁻¹¹ | kg/J      |
+| $k_{ox,0}$           | Oxidative pre-exponential          | 5.0×10⁻⁴  | kg/s      |
+| $E_a$                | Activation energy                  | 150_000   | J/mol     |
+| $R_{gas}$            | Universal gas constant             | 8.314     | J/(mol·K) |
+| `BETA_REAR`          | Brake bias rear                    | 0.44      | —         |
+| `D_DISC_OUTER_REAR`  | Rear disc outer diameter           | 0.270     | m         |
+| `D_DISC_INNER_REAR`  | Rear disc inner diameter           | 0.150     | m         |
+| `T_DISC_REAR`        | Rear disc thickness                | 0.032     | m         |
+| `M_DISC_REAR`        | Rear disc mass                     | 1.4       | kg        |
+| `H_EFF_0_REAR`       | Rear lumped convective conductance | 60.0      | W/K       |
+| `MGUK_POWER_LIMIT`   | MGU-K peak harvest power           | 350_000   | W         |
+| `MGUK_HARVEST_CAP_J` | MGU-K harvest cap per lap          | 7_000_000 | J         |
 
 This will live in code as a `constants.py` module so that any change to a parameter is one edit, one commit, traceable.
 

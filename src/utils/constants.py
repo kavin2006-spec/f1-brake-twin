@@ -57,3 +57,13 @@ FUEL_KG_PER_LAP = 0.9       # kg/lap, average race fuel consumption
 FUEL_MAX_KG = 70.0          # kg, 2026 regulatory cap
 FUEL_END_KG = 3.0           # kg, minimum race-end fuel
 T_RACE_START_C = 350.0      # °C, disc temp at start of lap 2 (first racing lap)
+
+# ── Rear-axle parameters (Phase 1b chunk 2) ────────────────────────
+BETA_REAR = 0.44                       # —, brake bias to rear (1 - BETA_FRONT)
+D_DISC_OUTER_REAR = 0.270              # m, rear disc outer diameter
+D_DISC_INNER_REAR = 0.150              # m, rear disc inner diameter
+T_DISC_REAR = 0.032                    # m, rear disc thickness (same cap as front)
+M_DISC_REAR = 1.4                      # kg, rear disc mass (geometric scaling from front)
+H_EFF_0_REAR = 60.0                    # W/K, rear lumped convective conductance
+MGUK_POWER_LIMIT = 350_000.0           # W, MGU-K peak harvest power (2026 regs)
+MGUK_HARVEST_CAP_J = 7_000_000.0       # J, MGU-K harvest cap per lap (2026 regs)
