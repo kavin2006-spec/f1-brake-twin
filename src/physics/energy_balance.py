@@ -156,10 +156,146 @@ def decompose_braking_event(v_ms: np.ndarray, t_s: np.ndarray,
         'frac_eng': E_eng / delta_KE if delta_KE > 0 else 0.0,
         'frac_brake_total': E_brake_total / delta_KE if delta_KE > 0 else 0.0,
     }
+# ─────────────────────────────────────────────────────────────────────
+# Sample-level (instantaneous) power functions
+# 
+# Phase 1b chunk 2 addition. These compute the instantaneous power at each
+# telemetry sample, returning arrays parallel to the input speed array.
+# Required for the rear-axle regen model, which applies the MGU-K power
+# cap continuously rather than at event level.
+#
+# Phase 1a's event-level integrators (drag_energy, rolling_resistance_energy,
+# engine_braking_energy, decompose_braking_event) are unchanged — these new
+# functions are additive only.
+# ─────────────────────────────────────────────────────────────────────
 
+def drag_power_instantaneous(v_ms: np.ndarray, rho_air: float,
+                              Cd: float = C.CD,
+                              A_f: float = C.A_F) -> np.ndarray:
+    """
+    Instantaneous power dissipated by aerodynamic drag at each sample.
+
+        P_drag(t) = 0.5 × ρ × Cd × A_f × v(t)³
+
+    Returns
+    -------
+    Array of power values in W, same shape as v_ms.
+    """
+    return 0.5 * rho_air * Cd * A_f * v_ms**3
+
+
+def rolling_resistance_power_instantaneous(v_ms: np.ndarray,
+                                            mass: float = C.M_CAR,
+                                            Crr: float = C.CRR,
+                                            g: float = C.G) -> np.ndarray:
+    """
+    Instantaneous power dissipated by rolling resistance.
+
+        P_roll(t) = Crr × m × g × v(t)
+    """
+    return Crr * mass * g * v_ms
+
+
+def engine_braking_power_instantaneous(v_ms: np.ndarray,
+                                        mass: float = C.M_CAR,
+                                        a_eng: float = C.A_ENG) -> np.ndarray:
+    """
+    Instantaneous power dissipated by engine braking.
+
+        P_eng(t) = m × a_eng × v(t)
+
+    Phase 1a treats a_eng as a constant equivalent deceleration applied
+    whenever the car is braking. Per the chunk 2 scope decision, engine
+    braking energy is dissipated in the engine and never reaches the
+    brake discs — so this term enters the brake-power calculation as
+    a subtraction from total kinetic loss, identical to Phase 1a.
+    """
+    return mass * a_eng * v_ms
+
+
+def kinetic_power_loss_instantaneous(v_ms: np.ndarray, t_s: np.ndarray,
+                                       mass: float = C.M_CAR) -> np.ndarray:
+    """
+    Instantaneous rate of kinetic energy loss.
+
+        P_kin(t) = -d/dt [0.5 × m × v(t)²] = -m × v(t) × a(t)
+
+    Computed via centered finite differences on speed. Positive when the
+    car is decelerating (losing kinetic energy). Same length as v_ms.
+
+    Note: returns 0 at samples where the car is accelerating (kinetic
+    energy is increasing, not being lost). The brake-power computation
+    downstream only cares about the loss case.
+    """
+    if len(v_ms) < 2:
+        return np.zeros_like(v_ms)
+
+    # Centered differences in the interior, forward/backward at the ends
+    dv_dt = np.gradient(v_ms, t_s)
+    # Deceleration is -dv/dt (positive when slowing down)
+    decel = -dv_dt
+    # Instantaneous kinetic power loss
+    P_kin_loss = mass * v_ms * decel
+    # Clip to zero where the car is actually accelerating
+    return np.maximum(P_kin_loss, 0.0)
+
+
+def brake_power_instantaneous(v_ms: np.ndarray, t_s: np.ndarray,
+                                rho_air: float,
+                                brake_bool: np.ndarray = None,
+                                mass: float = C.M_CAR) -> np.ndarray:
+    """
+    Total instantaneous brake power (front + rear, friction only).
+
+        P_brake_total(t) = P_kin_loss(t) - P_drag(t) - P_roll(t) - P_eng(t)
+
+    Engine braking is subtracted here because it dissipates in the engine,
+    not at the brake discs. This is the total power being absorbed by
+    both axles' brakes combined. Apply BETA_FRONT or BETA_REAR downstream
+    to get per-axle power.
+
+    Parameters
+    ----------
+    v_ms, t_s : speed (m/s) and time (s) arrays
+    rho_air : air density (kg/m³)
+    brake_bool : optional boolean array of brake state. If provided,
+                 P_brake is forced to zero where brake_bool is False
+                 (suppresses spurious "brake" power during coast).
+    mass : vehicle mass (kg)
+
+    Returns
+    -------
+    Array of brake power (W), same shape as v_ms. Clipped to non-negative.
+    """
+    P_kin = kinetic_power_loss_instantaneous(v_ms, t_s, mass=mass)
+    P_drag = drag_power_instantaneous(v_ms, rho_air)
+    P_roll = rolling_resistance_power_instantaneous(v_ms, mass=mass)
+
+    # Engine braking only applies when off-throttle. Phase 1a treats it
+    # as always-on during braking events (where throttle is at 0).
+    # Sample-level: apply only when brake is on (proxy for off-throttle).
+    if brake_bool is not None:
+        P_eng = engine_braking_power_instantaneous(v_ms, mass=mass) * brake_bool.astype(float)
+    else:
+        P_eng = engine_braking_power_instantaneous(v_ms, mass=mass)
+
+    P_brake = P_kin - P_drag - P_roll - P_eng
+    P_brake = np.maximum(P_brake, 0.0)  # Can't have negative brake power
+
+    # If brake_bool provided, force brake power to zero where brake is off
+    if brake_bool is not None:
+        P_brake = P_brake * brake_bool.astype(float)
+
+    return P_brake
 """
 Why I used np.trapezoid — it's numerical integration using the trapezoidal rule. Given (t, v) samples, np.trapezoid(v, t) computes ∫v dt by treating each pair of consecutive samples as a trapezoid. With our 7.5 Hz data, this is adequate accuracy for energy calculations. (Older NumPy uses np.trapz — same thing.)
 Why drag is v³ and rolling is v¹ — drag force itself is 0.5·ρ·Cd·A·v², and power = force × velocity gives v³. Rolling resistance force is constant (Crr·m·g), so power = force × velocity is linear in v. This is why drag dominates at high speed and rolling dominates at low speed.
 Engine braking as work = force × distance — ∫v dt is literally the distance traveled. So engine braking energy is just (constant force) × (distance), the cleanest possible calculation.
 The remainder approach — we don't model brake friction directly. We compute everything else and call whatever's left "brake energy." This is valid because we have hard ground truth on ΔKE (from speed measurements) and we have decent confidence in the other three terms. The error in the remainder is the sum of errors in the other three, which is fine for Phase 1a.
+"""
+
+"""
+np.gradient for the speed derivative. This uses centered differences in the interior of the array and one-sided differences at the endpoints. For our 7.5 Hz data, it's adequate. At higher rates we'd consider smoothing first because raw finite differences amplify noise — but FastF1's resampling already smooths the speed signal somewhat.
+The np.maximum(..., 0.0) clipping is essential. Without it, brake power could be slightly negative due to either (a) numerical noise in the derivative, or (b) genuinely small accelerations during what we've called a braking event (e.g., very brief throttle blips). Clipping to zero is honest: you can't have negative friction braking. The very small clipping events are below the noise floor of everything else.
+The brake_bool argument is optional but recommended. Without it, the function will compute "brake power" even during coast phases where the driver has lifted but isn't braking. The car is still decelerating from drag + rolling + engine braking, and the kinetic loss exceeds those terms by a small amount due to gradient noise — producing spurious tiny brake powers. Passing brake_bool from FastF1 zeroes these out cleanly.
 """

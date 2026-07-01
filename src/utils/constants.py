@@ -33,8 +33,21 @@ D_DISC_INNER = 0.180        # m, inner diameter
 T_DISC = 0.032              # m, disc thickness
 M_DISC = 2.0                # kg, mass of one disc
 
+# ── Rear-axle parameters (Phase 1b chunk 2) ────────────────────────
+BETA_REAR = 0.44
+D_DISC_OUTER_REAR = 0.270
+D_DISC_INNER_REAR = 0.150
+T_DISC_REAR = 0.032
+M_DISC_REAR = 1.4
+H_EFF_0_REAR = 60.0
+MGUK_POWER_LIMIT = 350_000.0
+MGUK_HARVEST_CAP_J = 7_000_000.0
+
 # Geometric area: annulus, both faces (computed once at import)
 A_DISC_GEOMETRIC = 2 * np.pi * (D_DISC_OUTER**2 - D_DISC_INNER**2) / 4  # m²
+
+# Rear disc geometric area (computed from rear geometry)
+A_DISC_GEOMETRIC_REAR = 2 * np.pi * (D_DISC_OUTER_REAR**2 - D_DISC_INNER_REAR**2) / 4  # m²
 
 # ── Carbon-carbon material properties (~600°C mid-range values) ────
 RHO_CC = 1800.0             # kg/m³, density

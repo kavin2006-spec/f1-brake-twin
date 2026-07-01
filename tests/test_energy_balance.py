@@ -155,3 +155,130 @@ def test_decompose_brake_share_in_expected_range():
     v, t = _synthetic_event()
     result = decompose_braking_event(v, t, rho_air=1.2)
     assert 0.60 < result['frac_brake_total'] < 0.90
+
+# ─────────────────────────────────────────────────────────────────────
+# Sample-level power functions (Phase 1b chunk 2)
+# ─────────────────────────────────────────────────────────────────────
+
+from src.physics.energy_balance import (
+    drag_power_instantaneous,
+    rolling_resistance_power_instantaneous,
+    engine_braking_power_instantaneous,
+    kinetic_power_loss_instantaneous,
+    brake_power_instantaneous,
+)
+
+
+def test_drag_power_inst_zero_at_zero_speed():
+    """Drag power must be zero when not moving."""
+    v = np.zeros(10)
+    P = drag_power_instantaneous(v, rho_air=1.225)
+    assert np.allclose(P, 0.0)
+
+
+def test_drag_power_inst_scales_v_cubed():
+    """Doubling v should give 8x drag power."""
+    v_low = np.full(5, 30.0)
+    v_high = np.full(5, 60.0)
+    P_low = drag_power_instantaneous(v_low, rho_air=1.225)
+    P_high = drag_power_instantaneous(v_high, rho_air=1.225)
+    assert np.allclose(P_high / P_low, 8.0, rtol=1e-9)
+
+
+def test_rolling_power_inst_linear_in_v():
+    """Rolling power is linear in speed (constant force)."""
+    v_low = np.full(5, 30.0)
+    v_high = np.full(5, 60.0)
+    P_low = rolling_resistance_power_instantaneous(v_low)
+    P_high = rolling_resistance_power_instantaneous(v_high)
+    assert np.allclose(P_high / P_low, 2.0, rtol=1e-9)
+
+
+def test_engine_braking_power_inst_linear_in_v():
+    """Engine braking power is force × velocity, force constant."""
+    v = np.array([20.0, 40.0, 80.0])
+    P = engine_braking_power_instantaneous(v)
+    assert P[1] / P[0] == pytest.approx(2.0)
+    assert P[2] / P[0] == pytest.approx(4.0)
+
+
+def test_kinetic_power_loss_zero_for_constant_speed():
+    """Constant speed → no kinetic energy change → zero power loss."""
+    t = np.linspace(0, 5, 50)
+    v = np.full_like(t, 60.0)
+    P = kinetic_power_loss_instantaneous(v, t)
+    assert np.allclose(P, 0.0, atol=1e-6)
+
+
+def test_kinetic_power_loss_during_linear_deceleration():
+    """Constant deceleration → P = m × v × a, decreasing as v decreases."""
+    t = np.linspace(0, 5, 50)
+    a = 20.0  # m/s² deceleration
+    v = 80.0 - a * t
+    P = kinetic_power_loss_instantaneous(v, t)
+    # Expected: m × v × a at each point (in the interior, away from edges)
+    expected_mid = C.M_CAR * v[25] * a
+    assert P[25] == pytest.approx(expected_mid, rel=1e-3)
+    # P should decrease as v decreases
+    assert P[10] > P[40]
+
+
+def test_kinetic_power_loss_zero_during_acceleration():
+    """Accelerating → kinetic energy is gaining, not losing → returns zero."""
+    t = np.linspace(0, 5, 50)
+    v = 40.0 + 10.0 * t  # accelerating from 40 to 90
+    P = kinetic_power_loss_instantaneous(v, t)
+    assert np.all(P == 0.0)
+
+
+def test_brake_power_zero_outside_braking():
+    """If brake_bool is False everywhere, brake power should be zero."""
+    t = np.linspace(0, 5, 50)
+    a = 20.0
+    v = 80.0 - a * t
+    brake = np.zeros_like(t, dtype=bool)  # never braking
+    P = brake_power_instantaneous(v, t, rho_air=1.225, brake_bool=brake)
+    assert np.allclose(P, 0.0)
+
+
+def test_brake_power_subtracts_non_brake_terms():
+    """Brake power = kinetic loss − drag − rolling − engine braking."""
+    t = np.linspace(0, 5, 50)
+    a = 20.0
+    v = 80.0 - a * t
+    brake = np.ones_like(t, dtype=bool)
+    
+    P_brake = brake_power_instantaneous(v, t, rho_air=1.225, brake_bool=brake)
+    P_kin = kinetic_power_loss_instantaneous(v, t)
+    P_drag = drag_power_instantaneous(v, rho_air=1.225)
+    P_roll = rolling_resistance_power_instantaneous(v)
+    P_eng = engine_braking_power_instantaneous(v)
+    
+    expected = np.maximum(P_kin - P_drag - P_roll - P_eng, 0.0)
+    # In the interior (away from gradient edge effects), should match
+    assert np.allclose(P_brake[10:40], expected[10:40], rtol=1e-3)
+
+
+def test_brake_power_event_integral_matches_event_level():
+    """
+    Critical consistency check: integrating P_brake over an event should
+    give approximately the same result as the event-level decomposition.
+    """
+    from src.physics.energy_balance import decompose_braking_event
+    
+    # Synthetic event: 80 → 30 m/s over 3 s
+    t = np.linspace(0, 3.0, 100)
+    v = np.linspace(80.0, 30.0, 100)
+    brake = np.ones_like(t, dtype=bool)
+    
+    # Event-level
+    decomp = decompose_braking_event(v, t, rho_air=1.2)
+    E_brake_total_event_level = decomp['E_brake_total_J']
+    
+    # Sample-level integrated
+    P_brake = brake_power_instantaneous(v, t, rho_air=1.2, brake_bool=brake)
+    E_brake_total_sample_level = np.trapezoid(P_brake, t)
+    
+    # Should agree within a few percent (gradient edge effects)
+    assert abs(E_brake_total_event_level - E_brake_total_sample_level) \
+        / E_brake_total_event_level < 0.05

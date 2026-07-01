@@ -22,28 +22,40 @@ from src.utils import constants as C
 # Heat flux components (per disc)
 # ─────────────────────────────────────────────────────────────────────
 
-def h_eff(v_ms: float) -> float:
+def h_eff(v_ms: float, h_eff_0: float = None) -> float:
     """
     Lumped convective conductance as a function of car speed.
 
-    h_eff(v) = H_EFF_0 × (v / V_REF)^N_VEL
+    h_eff(v) = h_eff_0 × (v / V_REF)^N_VEL
+
+    Parameters
+    ----------
+    v_ms : car speed in m/s
+    h_eff_0 : reference conductance at V_REF. Defaults to front-axle
+        H_EFF_0; pass H_EFF_0_REAR for rear-axle calculations.
 
     Units: W/K (this already includes effective cooling area; see param doc).
     """
+    if h_eff_0 is None:
+        h_eff_0 = C.H_EFF_0
     # Guard against negative/zero speeds (numerical safety)
     v = max(v_ms, 0.0)
-    return C.H_EFF_0 * (v / C.V_REF) ** C.N_VEL
+    return h_eff_0 * (v / C.V_REF) ** C.N_VEL
 
 
-def convective_loss(T_disc_K: float, T_amb_K: float, v_ms: float) -> float:
+def convective_loss(T_disc_K: float, T_amb_K: float, v_ms: float,
+                     h_eff_0: float = None) -> float:
     """
     Convective heat loss rate per disc, in W. Always non-negative when
     T_disc > T_amb (i.e., disc cools, doesn't gain heat from the airflow).
+
+    Pass h_eff_0=C.H_EFF_0_REAR for rear-axle calculations.
     """
-    return h_eff(v_ms) * (T_disc_K - T_amb_K)
+    return h_eff(v_ms, h_eff_0=h_eff_0) * (T_disc_K - T_amb_K)
 
 
-def radiative_loss(T_disc_K: float, T_amb_K: float) -> float:
+def radiative_loss(T_disc_K: float, T_amb_K: float,
+                    A_disc_geometric: float = None) -> float:
     """
     Radiative heat loss rate per disc, in W.
 
@@ -55,22 +67,43 @@ def radiative_loss(T_disc_K: float, T_amb_K: float) -> float:
 
     The T⁴ dependence means radiation is small at room temperature but
     significant above ~600°C.
+
+    Pass A_disc_geometric for rear-axle (computed from rear disc geometry);
+    defaults to front-axle geometric area.
     """
-    return (C.EPSILON_DISC * C.SIGMA_SB * C.A_DISC_GEOMETRIC
+    if A_disc_geometric is None:
+        A_disc_geometric = C.A_DISC_GEOMETRIC
+    return (C.EPSILON_DISC * C.SIGMA_SB * A_disc_geometric
             * (T_disc_K**4 - T_amb_K**4))
 
 
-def dT_dt(T_disc_K: float, T_amb_K: float, v_ms: float, P_in_W: float) -> float:
+def dT_dt(T_disc_K: float, T_amb_K: float, v_ms: float, P_in_W: float,
+           m_disc: float = None, cp_cc: float = None,
+           h_eff_0: float = None, A_disc_geometric: float = None) -> float:
     """
     Right-hand side of the thermal ODE.
 
     m × c_p × dT/dt = P_in - Q_conv - Q_rad
 
+    All disc-specific parameters default to front-axle values. Pass the
+    rear-axle equivalents for rear-disc calculations:
+        m_disc=M_DISC_REAR
+        h_eff_0=H_EFF_0_REAR
+        A_disc_geometric=A_DISC_GEOMETRIC_REAR (computed from rear geometry)
+
+    cp_cc is shared between front and rear (same material).
+
     Returns dT/dt in K/s.
     """
-    P_conv = convective_loss(T_disc_K, T_amb_K, v_ms)
-    P_rad = radiative_loss(T_disc_K, T_amb_K)
-    return (P_in_W - P_conv - P_rad) / (C.M_DISC * C.CP_CC)
+    if m_disc is None:
+        m_disc = C.M_DISC
+    if cp_cc is None:
+        cp_cc = C.CP_CC
+
+    P_conv = convective_loss(T_disc_K, T_amb_K, v_ms, h_eff_0=h_eff_0)
+    P_rad = radiative_loss(T_disc_K, T_amb_K,
+                            A_disc_geometric=A_disc_geometric)
+    return (P_in_W - P_conv - P_rad) / (m_disc * cp_cc)
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -118,9 +151,16 @@ def build_input_power_per_disc(t_s: np.ndarray, events: list) -> np.ndarray:
 
 def integrate_lap(t_s: np.ndarray, v_ms: np.ndarray,
                    P_in_W: np.ndarray,
-                   T_amb_K: float, T_init_K: float) -> np.ndarray:
+                   T_amb_K: float, T_init_K: float,
+                   m_disc: float = None, cp_cc: float = None,
+                   h_eff_0: float = None,
+                   A_disc_geometric: float = None) -> np.ndarray:
     """
     Forward-Euler integration of the thermal ODE over a lap.
+
+    All disc-specific parameters are passed through to dT_dt and default
+    to the front-axle constants. Rear-axle calls pass M_DISC_REAR,
+    H_EFF_0_REAR, and a rear-specific A_disc_geometric.
 
     Parameters
     ----------
@@ -148,7 +188,9 @@ def integrate_lap(t_s: np.ndarray, v_ms: np.ndarray,
     for i in range(1, n):
         dt = t_s[i] - t_s[i - 1]
         # Evaluate RHS using previous-step values (forward Euler)
-        rhs = dT_dt(T[i - 1], T_amb_K, v_ms[i - 1], P_in_W[i - 1])
+        rhs = dT_dt(T[i - 1], T_amb_K, v_ms[i - 1], P_in_W[i - 1],
+                    m_disc=m_disc, cp_cc=cp_cc,
+                    h_eff_0=h_eff_0, A_disc_geometric=A_disc_geometric)
         T[i] = T[i - 1] + rhs * dt
 
     return T

@@ -67,7 +67,9 @@ def total_wear_rate(P_brake_W: float, T_disc_K: float) -> float:
 # ─────────────────────────────────────────────────────────────────────
 
 def integrate_wear_lap(t_s: np.ndarray, P_brake_W: np.ndarray,
-                        T_disc_K: np.ndarray) -> dict:
+                        T_disc_K: np.ndarray,
+                        disc_outer: float = None,
+                        disc_inner: float = None) -> dict:
     """
     Integrate wear over a full lap.
 
@@ -76,6 +78,8 @@ def integrate_wear_lap(t_s: np.ndarray, P_brake_W: np.ndarray,
     t_s : timestamps (seconds), monotonically increasing
     P_brake_W : input power to the disc at each timestamp (W)
     T_disc_K : disc temperature at each timestamp (K)
+    disc_outer : outer diameter of the disc (m)
+    disc_inner : inner diameter of the disc (m)
 
     Returns
     -------
@@ -88,6 +92,11 @@ def integrate_wear_lap(t_s: np.ndarray, P_brake_W: np.ndarray,
         'rate_mech_W_per_s' : array of mechanical wear rate over time
         'rate_ox_W_per_s'   : array of oxidative wear rate over time
     """
+    if disc_outer is None:
+        disc_outer = C.D_DISC_OUTER
+    if disc_inner is None:
+        disc_inner = C.D_DISC_INNER
+
     # Compute rates pointwise
     rate_mech = np.array([mechanical_wear_rate(P) for P in P_brake_W])
     rate_ox = np.array([oxidative_wear_rate(T) for T in T_disc_K])
@@ -101,8 +110,10 @@ def integrate_wear_lap(t_s: np.ndarray, P_brake_W: np.ndarray,
     # Each face loses mass uniformly; total volume loss = mass / density;
     # volume = thickness × area × 2 (both faces wear)
     volume_loss_m3 = W_total / C.RHO_CC
-    # Wear is distributed between the two friction faces of the annulus
-    A_friction_one_face = np.pi * (C.D_DISC_OUTER**2 - C.D_DISC_INNER**2) / 4
+    # Wear is distributed between the two friction faces of the annulus.
+    # Defaults to front-disc geometry; pass disc_outer and disc_inner
+    # for rear-disc thickness conversion.
+    A_friction_one_face = np.pi * (disc_outer**2 - disc_inner**2) / 4
     thickness_loss_per_face_m = volume_loss_m3 / (2 * A_friction_one_face)
     thickness_loss_um = thickness_loss_per_face_m * 1e6
 
